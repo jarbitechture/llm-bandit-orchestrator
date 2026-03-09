@@ -1,0 +1,26 @@
+{
+  "strict_tdd:fizzbuzz": {
+    "alpha": 6.0,
+    "beta": 1.0
+  },
+  "strict_tdd:is_palindrome": {
+    "alpha": 6.0,
+    "beta": 1.0
+  },
+  "balanced:fizzbuzz": {
+    "alpha": 5.0,
+    "beta": 1.0
+  },
+  "balanced:is_palindrome": {
+    "alpha": 1.0,
+    "beta": 1.0
+  },
+  "exploratory:fizzbuzz": {
+    "alpha": 2.0,
+    "beta": 1.0
+  },
+  "exploratory:is_palindrome": {
+    "alpha": 6.0,
+    "beta": 1.0
+  }
+}

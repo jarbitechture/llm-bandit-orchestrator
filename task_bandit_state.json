@@ -1,0 +1,10 @@
+{
+  "fizzbuzz": {
+    "alpha": 12.0,
+    "beta": 1.0
+  },
+  "is_palindrome": {
+    "alpha": 11.0,
+    "beta": 1.0
+  }
+}

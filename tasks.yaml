@@ -1,0 +1,27 @@
+# tasks.yaml — each entry describes a code-generation task for the orchestrator.
+#
+# Fields:
+#   id:           short unique identifier
+#   prompt:       detailed instruction sent to the LLM
+#   target_file:  where the generated code is written
+#   test_command: shell command whose exit code determines success/failure
+
+- id: fizzbuzz
+  prompt: |
+    Write a Python module that exposes a function
+    `fizzbuzz(n: int) -> list[str]` which returns a list of strings
+    from 1 to n where: multiples of 3 are "Fizz", multiples of 5 are
+    "Buzz", multiples of both are "FizzBuzz", and all others are the
+    number as a string. If n is 0 or negative, return an empty list.
+  target_file: src/fizzbuzz.py
+  test_command: pytest tests/test_fizzbuzz.py -q
+
+- id: is_palindrome
+  prompt: |
+    Write a Python module that exposes a function
+    `is_palindrome(text: str) -> bool` which returns True when the input
+    string reads the same forwards and backwards. The check should be
+    case-insensitive and ignore all non-alphanumeric characters.
+    An empty string should be considered a palindrome.
+  target_file: src/palindrome.py
+  test_command: pytest tests/test_is_palindrome.py -q
