@@ -25,3 +25,50 @@
     An empty string should be considered a palindrome.
   target_file: src/palindrome.py
   test_command: pytest tests/test_is_palindrome.py -q
+
+- id: matrix_spiral
+  prompt: |
+    Write a Python module that exposes a function
+    `spiral_order(matrix: list[list[int]]) -> list[int]` which returns
+    elements of an M×N matrix in clockwise spiral order starting from
+    the top-left corner. Handle edge cases: empty matrix returns [],
+    single row returns that row, single column returns that column.
+    Matrix may be non-square (e.g. 3×5 or 5×2).
+  target_file: src/matrix_spiral.py
+  test_command: pytest tests/test_matrix_spiral.py -q
+
+- id: eval_rpn
+  prompt: |
+    Write a Python module that exposes a function
+    `eval_rpn(tokens: list[str]) -> int` which evaluates a list of tokens
+    in Reverse Polish Notation and returns the integer result.
+    Supported operators: +, -, *, /. Division truncates toward zero
+    (like C, not Python's floor division — so -7/2 = -3, not -4).
+    All operands are valid integers as strings.
+    Raise ValueError on invalid input (empty list, insufficient operands,
+    unknown operators, leftover operands after evaluation).
+  target_file: src/eval_rpn.py
+  test_command: pytest tests/test_eval_rpn.py -q
+
+- id: lru_cache
+  prompt: |
+    Write a Python module that exposes a class `LRUCache` with:
+    - `__init__(self, capacity: int)` — create cache with given max capacity (≥1)
+    - `get(self, key: int) -> int` — return value if key exists, else -1
+    - `put(self, key: int, value: int) -> None` — insert or update key-value pair;
+      if cache exceeds capacity, evict the least recently used key
+    Both get and put must run in O(1) average time.
+    A get() that finds a key counts as a use. A put() always counts as a use.
+  target_file: src/lru_cache.py
+  test_command: pytest tests/test_lru_cache.py -q
+
+- id: interval_merge
+  prompt: |
+    Write a Python module that exposes a function
+    `merge_intervals(intervals: list[list[int]]) -> list[list[int]]`
+    which merges all overlapping intervals and returns the result sorted
+    by start time. Touching intervals like [1,3] and [3,5] should merge
+    into [1,5]. Empty input returns []. Single-point intervals like [2,2]
+    are valid. Input may be unsorted.
+  target_file: src/interval_merge.py
+  test_command: pytest tests/test_interval_merge.py -q

@@ -18,6 +18,7 @@ import json
 import os
 import sys
 
+import numpy as np
 from scipy import stats
 import yaml
 
@@ -72,6 +73,66 @@ def _analyze_arms(state: dict) -> dict:
             "record": f"{wins}/{attempts}",
         }
     return arms
+
+
+def _prob_a_beats_b(a_alpha: float, a_beta: float, b_alpha: float, b_beta: float,
+                    n_samples: int = 50_000) -> float:
+    """Monte Carlo estimate of P(arm_A > arm_B) from their Beta posteriors."""
+    draws_a = np.random.beta(a_alpha, a_beta, size=n_samples)
+    draws_b = np.random.beta(b_alpha, b_beta, size=n_samples)
+    return float(np.mean(draws_a > draws_b))
+
+
+def _pairwise_significance(state: dict, label: str) -> dict:
+    """Compute pairwise P(A>B) for all arm pairs and flag which are distinguishable.
+
+    Returns a dict with:
+      - comparisons: list of {a, b, p_a_beats_b, significant}
+      - verdict: human-readable summary
+    """
+    arm_ids = list(state.keys())
+    if len(arm_ids) < 2:
+        return {"comparisons": [], "verdict": f"{label}: only 1 arm, nothing to compare."}
+
+    comparisons = []
+    for i, a_id in enumerate(arm_ids):
+        for b_id in arm_ids[i + 1:]:
+            pa = state[a_id]
+            pb = state[b_id]
+            p = _prob_a_beats_b(pa["alpha"], pa["beta"], pb["alpha"], pb["beta"])
+            # Significant if P(A>B) > 0.90 or P(A>B) < 0.10
+            sig = p > 0.90 or p < 0.10
+            comparisons.append({
+                "a": a_id,
+                "b": b_id,
+                "p_a_beats_b": round(p, 3),
+                "significant": sig,
+            })
+
+    n_sig = sum(1 for c in comparisons if c["significant"])
+    total = len(comparisons)
+    if n_sig == 0:
+        verdict = (f"{label}: NO significant differences detected. "
+                   f"All {len(arm_ids)} arms are statistically indistinguishable. "
+                   f"Recommendations are NOISE until failure data creates separation.")
+    elif n_sig == total:
+        verdict = f"{label}: All {total} pairwise comparisons are significant (>90% confidence)."
+    else:
+        verdict = f"{label}: {n_sig}/{total} pairwise comparisons are significant."
+
+    return {"comparisons": comparisons, "verdict": verdict}
+
+
+def _zero_failure_warning(state: dict, label: str) -> str | None:
+    """Warn if all arms have zero failures — the bandit is learning nothing."""
+    all_zero = all((p["beta"] - 1.0) < 0.5 for p in state.values())
+    if not all_zero:
+        return None
+    total = sum(int(p["alpha"] + p["beta"] - 2) for p in state.values())
+    return (f"ZERO-FAILURE WARNING ({label}): All {len(state)} arms have 0 failures "
+            f"across {total} trials. The bandit has NO discriminative signal. "
+            f"All recommendations are equivalent to random selection. "
+            f"Add harder tasks or tighter test criteria to generate failures.")
 
 
 def cmd_think(args: argparse.Namespace) -> None:
@@ -146,6 +207,30 @@ def cmd_think(args: argparse.Namespace) -> None:
             f"~20+ needed before posteriors meaningfully converge."
         )
 
+    # Statistical significance checks
+    variant_sig = _pairwise_significance(variant_state, "Variants")
+    task_sig = _pairwise_significance(task_state, "Tasks")
+
+    warnings = []
+    zf_variant = _zero_failure_warning(variant_state, "variants")
+    zf_task = _zero_failure_warning(task_state, "tasks")
+    if zf_variant:
+        warnings.append(zf_variant)
+    if zf_task:
+        warnings.append(zf_task)
+
+    # Confidence that the recommendation is actually the best
+    rec_confidence = {}
+    for vid, params in variant_state.items():
+        if vid == chosen_variant:
+            continue
+        p = _prob_a_beats_b(
+            variant_state[chosen_variant]["alpha"],
+            variant_state[chosen_variant]["beta"],
+            params["alpha"], params["beta"],
+        )
+        rec_confidence[f"P({chosen_variant}>{vid})"] = round(p, 3)
+
     result = {
         "variants": variant_analysis,
         "tasks": task_analysis,
@@ -154,7 +239,13 @@ def cmd_think(args: argparse.Namespace) -> None:
             "use_variant": chosen_variant,
             "work_on_task": chosen_task,
             "best_variant_per_task": best_variant_per_task,
+            "confidence": rec_confidence,
         },
+        "statistical_tests": {
+            "variant_significance": variant_sig,
+            "task_significance": task_sig,
+        },
+        "warnings": warnings,
         "knowledge_gaps": gaps,
     }
     print(json.dumps(result, indent=2))
