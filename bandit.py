@@ -18,9 +18,12 @@ from typing import Dict, List
 
 import numpy as np
 
-STATE_FILE = "bandit_state.json"
-TASK_STATE_FILE = "task_bandit_state.json"
-CROSS_STATE_FILE = "cross_bandit_state.json"
+_DIR = os.path.dirname(os.path.abspath(__file__))
+STATE_FILE = os.path.join(_DIR, "bandit_state.json")
+TASK_STATE_FILE = os.path.join(_DIR, "task_bandit_state.json")
+CROSS_STATE_FILE = os.path.join(_DIR, "cross_bandit_state.json")
+SCORE_STATE_FILE = os.path.join(_DIR, "score_bandit_state.json")
+TASKTYPE_STATE_FILE = os.path.join(_DIR, "tasktype_bandit_state.json")
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +109,7 @@ def update_task_state(
 ) -> None:
     """Update the Beta posterior for a task in place."""
     if task_id not in state:
-        raise KeyError(f"Unknown task '{task_id}'. Known: {list(state.keys())}")
+        state[task_id] = {"alpha": 1.0, "beta": 1.0}
     if success:
         state[task_id]["alpha"] += 1.0
     else:
@@ -143,7 +146,7 @@ def update_cross_state(
     """Update the cross-product posterior for a variant:task pair."""
     key = f"{variant_id}:{task_id}"
     if key not in state:
-        raise KeyError(f"Unknown cross key '{key}'. Known: {list(state.keys())}")
+        state[key] = {"alpha": 1.0, "beta": 1.0}
     if success:
         state[key]["alpha"] += 1.0
     else:
@@ -221,6 +224,123 @@ def thompson_sample_neediest(state: Dict[str, Dict[str, float]]) -> str:
 # ---------------------------------------------------------------------------
 # Decay (optional — call periodically to prevent stale posteriors)
 # ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# Score-based bandit (Gaussian Thompson sampling)
+# ---------------------------------------------------------------------------
+
+def _load_scores(path: str, keys: List[str]) -> Dict[str, Dict]:
+    """Load score state. Each arm tracks: n, mean, M2 (for Welford's online variance)."""
+    state = {}
+    if os.path.exists(path):
+        try:
+            with open(path, "r") as f:
+                state = json.load(f)
+        except (json.JSONDecodeError, ValueError):
+            backup = path + ".corrupt"
+            os.replace(path, backup)
+    for k in keys:
+        if k not in state:
+            state[k] = {"n": 0, "mean": 0.5, "M2": 0.0}
+    return state
+
+
+def load_score_state(keys: List[str]) -> Dict[str, Dict]:
+    return _load_scores(SCORE_STATE_FILE, keys)
+
+
+def save_score_state(state: Dict[str, Dict]) -> None:
+    _save(SCORE_STATE_FILE, state)
+
+
+def update_score_state(state: Dict[str, Dict], key: str, score: float) -> None:
+    """Welford's online algorithm for updating mean and variance."""
+    if key not in state:
+        state[key] = {"n": 0, "mean": 0.5, "M2": 0.0}
+    s = state[key]
+    s["n"] += 1
+    delta = score - s["mean"]
+    s["mean"] += delta / s["n"]
+    delta2 = score - s["mean"]
+    s["M2"] += delta * delta2
+
+
+def gaussian_thompson_sample(state: Dict[str, Dict]) -> str:
+    """Sample from Normal posterior for each arm, return highest."""
+    if not state:
+        raise ValueError("Empty state")
+    best_id = ""
+    best_val = -float("inf")
+    for arm_id, s in state.items():
+        n = s["n"]
+        if n < 2:
+            sample = np.random.normal(0.5, 0.25)
+        else:
+            variance = s["M2"] / (n - 1)
+            stderr = np.sqrt(variance / n) if variance > 0 else 0.01
+            sample = np.random.normal(s["mean"], stderr)
+        if sample > best_val:
+            best_val = sample
+            best_id = arm_id
+    return best_id
+
+
+def get_score_stats(state: Dict[str, Dict]) -> Dict[str, Dict]:
+    """Compute readable stats from score state."""
+    result = {}
+    for arm_id, s in state.items():
+        n = s["n"]
+        if n < 2:
+            result[arm_id] = {
+                "n": n, "mean": round(s["mean"], 3),
+                "std": None, "ci_90": None, "verdict": "insufficient data"
+            }
+        else:
+            variance = s["M2"] / (n - 1)
+            std = np.sqrt(variance)
+            stderr = std / np.sqrt(n)
+            from scipy.stats import t as t_dist
+            ci = t_dist.interval(0.90, df=n - 1, loc=s["mean"], scale=stderr)
+            result[arm_id] = {
+                "n": n, "mean": round(s["mean"], 3),
+                "std": round(std, 3),
+                "ci_90": [round(ci[0], 3), round(ci[1], 3)],
+                "verdict": "converging" if (ci[1] - ci[0]) < 0.2 else "exploring"
+            }
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Task-type bandit (which variant for which kind of work)
+# ---------------------------------------------------------------------------
+
+TASK_TYPES = ["greenfield", "refactor", "test", "unknown"]
+
+
+def load_tasktype_state(variant_ids: List[str]) -> Dict[str, Dict]:
+    """Load per-tasktype score state. Keys are 'variant:tasktype'."""
+    keys = [f"{v}:{t}" for v in variant_ids for t in TASK_TYPES]
+    return _load_scores(TASKTYPE_STATE_FILE, keys)
+
+
+def save_tasktype_state(state: Dict[str, Dict]) -> None:
+    _save(TASKTYPE_STATE_FILE, state)
+
+
+def best_variant_for_type(
+    state: Dict[str, Dict], variant_ids: List[str], task_type: str
+) -> str:
+    """Gaussian Thompson sample across variants for a specific task type."""
+    candidates = {}
+    for vid in variant_ids:
+        key = f"{vid}:{task_type}"
+        if key in state:
+            candidates[key] = state[key]
+    if not candidates:
+        return np.random.choice(variant_ids)
+    best_key = gaussian_thompson_sample(candidates)
+    return best_key.split(":")[0]
+
 
 def decay_state(
     state: Dict[str, Dict[str, float]], factor: float = 0.95

@@ -23,28 +23,38 @@ from scipy import stats
 import yaml
 
 from bandit import (
+    TASK_TYPES,
+    best_variant_for_type,
     decay_state,
+    gaussian_thompson_sample,
+    get_score_stats,
     load_cross_state,
+    load_score_state,
     load_state,
     load_task_state,
+    load_tasktype_state,
     save_cross_state,
+    save_score_state,
     save_state,
     save_task_state,
+    save_tasktype_state,
     thompson_sample,
     thompson_sample_for_task,
     thompson_sample_neediest,
     update_cross_state,
+    update_score_state,
     update_state,
     update_task_state,
 )
 
 VARIANT_IDS = ["strict_tdd", "balanced", "exploratory"]
-RUN_LOG = "runs.jsonl"
+_DIR = os.path.dirname(os.path.abspath(__file__))
+RUN_LOG = os.path.join(_DIR, "runs.jsonl")
 
 
 def _load_tasks() -> list[dict]:
     """Read full task list from tasks.yaml."""
-    with open("tasks.yaml", "r") as f:
+    with open(os.path.join(_DIR, "tasks.yaml"), "r") as f:
         return yaml.safe_load(f)
 
 
@@ -251,6 +261,64 @@ def cmd_think(args: argparse.Namespace) -> None:
     print(json.dumps(result, indent=2))
 
 
+def cmd_init(args: argparse.Namespace) -> None:
+    """Lightweight variant selection for SessionStart hook. Minimal output."""
+    variant_state = load_state(VARIANT_IDS)
+    score_state = load_score_state(VARIANT_IDS)
+
+    # If we have score data, prefer Gaussian sampling
+    has_scores = any(s["n"] >= 2 for s in score_state.values())
+    if has_scores:
+        chosen = gaussian_thompson_sample(score_state)
+        method = "gaussian"
+    else:
+        chosen = thompson_sample(variant_state)
+        method = "beta"
+
+    # Task-type awareness
+    tasktype_state = load_tasktype_state(VARIANT_IDS)
+    type_recs = {}
+    for tt in TASK_TYPES:
+        type_recs[tt] = best_variant_for_type(tasktype_state, VARIANT_IDS, tt)
+
+    # Convergence check
+    score_stats = get_score_stats(score_state)
+    converged = all(
+        s.get("verdict") == "converging"
+        for s in score_stats.values()
+        if s["n"] and s["n"] >= 2
+    )
+
+    total_trials = sum(s["n"] for s in score_state.values())
+
+    # Write to file for other tools to read
+    active_file = os.path.join(_DIR, ".active_variant")
+    with open(active_file, "w") as f:
+        json.dump({"variant": chosen, "method": method}, f)
+
+    result = {
+        "variant": chosen,
+        "method": method,
+        "total_scored_trials": total_trials,
+        "by_task_type": type_recs,
+        "converged": converged,
+    }
+
+    if converged and total_trials >= 15:
+        result["signal"] = "STOP_EXPLORING — variants have converged. Using best."
+    elif total_trials < 5:
+        result["signal"] = "COLD_START — insufficient data, exploring."
+    else:
+        result["signal"] = "EXPLORING — gathering signal."
+
+    # Score-based rankings if available
+    if has_scores:
+        ranked = sorted(score_stats.items(), key=lambda x: x[1]["mean"], reverse=True)
+        result["rankings"] = {k: v["mean"] for k, v in ranked}
+
+    print(json.dumps(result, indent=2))
+
+
 def cmd_suggest(args: argparse.Namespace) -> None:
     """Pick a coding-style variant via Thompson sampling (highest draw wins)."""
     state = load_state(VARIANT_IDS)
@@ -301,48 +369,79 @@ def cmd_summary(args: argparse.Namespace) -> None:
 
 
 def cmd_update(args: argparse.Namespace) -> None:
-    """Update both variant and task bandit state after a pass/fail result."""
+    """Update bandit state after a task result. Supports pass/fail and continuous scores."""
     tasks = _load_tasks()
     valid_task_ids = _task_ids(tasks)
+    # Auto-register unknown task IDs so infra/debug/ad-hoc tasks can be scored
     if args.task_id not in valid_task_ids:
-        print(
-            f"ERROR: unknown task_id '{args.task_id}'. "
-            f"Valid: {valid_task_ids}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
+        valid_task_ids.append(args.task_id)
 
     success = args.result == "pass"
+    score = args.score  # None if not provided
 
-    # Update variant bandit
+    # Update variant bandit (Beta — pass/fail)
     if args.variant:
         if args.variant not in VARIANT_IDS:
-            print(
-                f"ERROR: unknown variant '{args.variant}'. "
-                f"Valid: {VARIANT_IDS}",
-                file=sys.stderr,
-            )
+            print(f"ERROR: unknown variant '{args.variant}'. Valid: {VARIANT_IDS}", file=sys.stderr)
             sys.exit(1)
         variant_state = load_state(VARIANT_IDS)
         update_state(variant_state, args.variant, success)
         save_state(variant_state)
 
-    # Update task bandit
+    # Update task bandit (Beta — pass/fail)
     task_state = load_task_state(valid_task_ids)
     update_task_state(task_state, args.task_id, success)
     save_task_state(task_state)
 
-    # Update cross-product bandit
+    # Update cross-product bandit (Beta — pass/fail)
     if args.variant:
         cross_state = load_cross_state(VARIANT_IDS, valid_task_ids)
         update_cross_state(cross_state, args.variant, args.task_id, success)
         save_cross_state(cross_state)
 
-    out = {"task_id": args.task_id, "success": success, "task_state": task_state[args.task_id]}
+    # Update score bandit (Gaussian — continuous score)
+    if args.variant and score is not None:
+        score_state = load_score_state(VARIANT_IDS)
+        update_score_state(score_state, args.variant, score)
+        save_score_state(score_state)
+
+    # Update task-type bandit (Gaussian — per variant:tasktype)
+    task_type = args.task_type or "unknown"
+    if args.variant and score is not None:
+        tasktype_state = load_tasktype_state(VARIANT_IDS)
+        key = f"{args.variant}:{task_type}"
+        update_score_state(tasktype_state, key, score)
+        save_tasktype_state(tasktype_state)
+
+    # Log to runs.jsonl
+    import time
+    run_entry = {
+        "timestamp": time.time(),
+        "task_id": args.task_id,
+        "variant_id": args.variant or "unknown",
+        "success": success,
+        "score": score,
+        "task_type": task_type,
+    }
+    with open(RUN_LOG, "a") as f:
+        f.write(json.dumps(run_entry) + "\n")
+
+    # Clear attempt tracking
+    attempt_file = os.path.join(_DIR, ".current_attempt")
+    if os.path.exists(attempt_file):
+        os.remove(attempt_file)
+
+    out = {
+        "task_id": args.task_id,
+        "success": success,
+        "task_state": task_state[args.task_id],
+    }
+    if score is not None:
+        out["score"] = score
+        out["task_type"] = task_type
     if args.variant:
         out["variant_id"] = args.variant
         out["variant_state"] = variant_state[args.variant]
-        out["cross_state"] = cross_state[f"{args.variant}:{args.task_id}"]
     print(json.dumps(out, indent=2))
 
 
@@ -426,19 +525,54 @@ def cmd_regret(args: argparse.Namespace) -> None:
     }, indent=2))
 
 
+def cmd_score_report(args: argparse.Namespace) -> None:
+    """Show score-based Gaussian bandit analysis alongside Beta analysis."""
+    score_state = load_score_state(VARIANT_IDS)
+    score_stats = get_score_stats(score_state)
+
+    tasktype_state = load_tasktype_state(VARIANT_IDS)
+    tasktype_stats = get_score_stats(tasktype_state)
+
+    # Convergence
+    converged_arms = [k for k, v in score_stats.items() if v.get("verdict") == "converging"]
+    exploring_arms = [k for k, v in score_stats.items() if v.get("verdict") == "exploring"]
+
+    result = {
+        "variant_scores": score_stats,
+        "tasktype_scores": tasktype_stats,
+        "converged": converged_arms,
+        "exploring": exploring_arms,
+    }
+
+    if converged_arms:
+        best = max(
+            ((k, v) for k, v in score_stats.items() if v["n"] >= 2),
+            key=lambda x: x[1]["mean"],
+            default=None,
+        )
+        if best:
+            result["recommendation"] = f"Use '{best[0]}' (mean={best[1]['mean']}, n={best[1]['n']})"
+
+    print(json.dumps(result, indent=2))
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Bandit CLI for LLM orchestrator")
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     sub.add_parser("think").set_defaults(func=cmd_think)
+    sub.add_parser("init").set_defaults(func=cmd_init)
     sub.add_parser("suggest").set_defaults(func=cmd_suggest)
     sub.add_parser("propose").set_defaults(func=cmd_propose)
     sub.add_parser("summary").set_defaults(func=cmd_summary)
+    sub.add_parser("scores").set_defaults(func=cmd_score_report)
 
     p_update = sub.add_parser("update")
     p_update.add_argument("task_id", help="Task id from tasks.yaml")
     p_update.add_argument("result", choices=["pass", "fail"], help="Test outcome")
     p_update.add_argument("--variant", help="Variant id to also update variant bandit")
+    p_update.add_argument("--score", type=float, help="Continuous quality score 0-1")
+    p_update.add_argument("--task-type", choices=TASK_TYPES, help="Task type for segmented learning")
     p_update.set_defaults(func=cmd_update)
 
     p_decay = sub.add_parser("decay")
