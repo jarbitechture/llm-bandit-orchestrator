@@ -20,3 +20,13 @@
 {"task_id": "is_palindrome", "variant_id": "strict_tdd", "success": true, "timestamp": "2026-03-09T15:52:25Z"}
 {"task_id": "fizzbuzz", "variant_id": "strict_tdd", "success": true, "timestamp": "2026-03-09T15:52:44Z"}
 {"task_id": "is_palindrome", "variant_id": "exploratory", "success": true, "timestamp": "2026-03-09T15:52:48Z"}
+{"timestamp": 1773237784.9613252, "task_id": "fizzbuzz", "variant_id": "strict_tdd", "success": true, "score": 0.85, "task_type": "greenfield"}
+{"timestamp": 1773237963.4762409, "task_id": "is_palindrome", "variant_id": "strict_tdd", "success": true, "score": 0.92, "task_type": "refactor"}
+{"timestamp": 1773237965.632412, "task_id": "matrix_spiral", "variant_id": "exploratory", "success": true, "score": 0.7, "task_type": "greenfield"}
+{"timestamp": 1773237967.1914508, "task_id": "eval_rpn", "variant_id": "balanced", "success": true, "score": 0.78, "task_type": "greenfield"}
+{"timestamp": 1773237968.523762, "task_id": "lru_cache", "variant_id": "exploratory", "success": true, "score": 0.65, "task_type": "refactor"}
+{"timestamp": 1773237969.7382379, "task_id": "interval_merge", "variant_id": "balanced", "success": true, "score": 0.88, "task_type": "refactor"}
+{"timestamp": 1773306960.300297, "task_id": "router_fallback_chain", "variant_id": "balanced", "success": true, "score": 0.8, "task_type": "refactor"}
+{"timestamp": 1773307425.895863, "task_id": "mcp-jetsam-fix", "variant_id": "balanced", "success": true, "score": 0.8, "task_type": "refactor"}
+{"timestamp": 1773307454.411776, "task_id": "bandit-free-task-ids", "variant_id": "balanced", "success": true, "score": 0.7, "task_type": "refactor"}
+{"timestamp": 1773312458.73571, "task_id": "bandit_improvements", "variant_id": "strict_tdd", "success": true, "score": 0.8, "task_type": "refactor"}

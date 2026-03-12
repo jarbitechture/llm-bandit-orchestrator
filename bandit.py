@@ -263,6 +263,8 @@ def update_score_state(state: Dict[str, Dict], key: str, score: float) -> None:
     s["mean"] += delta / s["n"]
     delta2 = score - s["mean"]
     s["M2"] += delta * delta2
+    # Guard against floating-point drift producing negative M2
+    s["M2"] = max(0.0, s["M2"])
 
 
 def gaussian_thompson_sample(state: Dict[str, Dict]) -> str:

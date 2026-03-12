@@ -261,19 +261,36 @@ def cmd_think(args: argparse.Namespace) -> None:
     print(json.dumps(result, indent=2))
 
 
+MIN_SAMPLES_PER_ARM = 5
+
+
+def _forced_exploration(score_state: dict, variant_ids: list[str]) -> str | None:
+    """Round-robin until each arm has MIN_SAMPLES_PER_ARM scored observations."""
+    counts = {v: score_state.get(v, {}).get("n", 0) for v in variant_ids}
+    undersampled = [v for v, n in counts.items() if n < MIN_SAMPLES_PER_ARM]
+    if undersampled:
+        return min(undersampled, key=lambda v: counts[v])
+    return None
+
+
 def cmd_init(args: argparse.Namespace) -> None:
     """Lightweight variant selection for SessionStart hook. Minimal output."""
     variant_state = load_state(VARIANT_IDS)
     score_state = load_score_state(VARIANT_IDS)
 
-    # If we have score data, prefer Gaussian sampling
-    has_scores = any(s["n"] >= 2 for s in score_state.values())
-    if has_scores:
+    # Phase 1: Forced exploration — ensure minimum samples per arm
+    forced = _forced_exploration(score_state, VARIANT_IDS)
+    if forced:
+        chosen = forced
+        method = "forced_explore"
+    elif any(s["n"] >= 2 for s in score_state.values()):
+        # Phase 2: Gaussian Thompson Sampling (primary decision engine)
         chosen = gaussian_thompson_sample(score_state)
         method = "gaussian"
     else:
+        # Phase 3: Beta fallback only during absolute cold start (n<2 everywhere)
         chosen = thompson_sample(variant_state)
-        method = "beta"
+        method = "beta_coldstart"
 
     # Task-type awareness
     tasktype_state = load_tasktype_state(VARIANT_IDS)
@@ -312,6 +329,7 @@ def cmd_init(args: argparse.Namespace) -> None:
         result["signal"] = "EXPLORING — gathering signal."
 
     # Score-based rankings if available
+    has_scores = any(s["n"] >= 2 for s in score_state.values())
     if has_scores:
         ranked = sorted(score_stats.items(), key=lambda x: x[1]["mean"], reverse=True)
         result["rankings"] = {k: v["mean"] for k, v in ranked}

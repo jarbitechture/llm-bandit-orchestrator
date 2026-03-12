@@ -1,10 +1,54 @@
 {
   "fizzbuzz": {
-    "alpha": 12.0,
+    "alpha": 13.0,
     "beta": 1.0
   },
   "is_palindrome": {
-    "alpha": 11.0,
+    "alpha": 12.0,
+    "beta": 1.0
+  },
+  "matrix_spiral": {
+    "alpha": 3.0,
+    "beta": 1.0
+  },
+  "eval_rpn": {
+    "alpha": 3.0,
+    "beta": 1.0
+  },
+  "lru_cache": {
+    "alpha": 3.0,
+    "beta": 1.0
+  },
+  "interval_merge": {
+    "alpha": 3.0,
+    "beta": 1.0
+  },
+  "safety_jailbreak_gate": {
+    "alpha": 1.0,
+    "beta": 1.0
+  },
+  "cost_tracker": {
+    "alpha": 1.0,
+    "beta": 1.0
+  },
+  "tool_registry_discovery": {
+    "alpha": 1.0,
+    "beta": 1.0
+  },
+  "router_fallback_chain": {
+    "alpha": 2.0,
+    "beta": 1.0
+  },
+  "mcp-jetsam-fix": {
+    "alpha": 2.0,
+    "beta": 1.0
+  },
+  "bandit-free-task-ids": {
+    "alpha": 2.0,
+    "beta": 1.0
+  },
+  "bandit_improvements": {
+    "alpha": 2.0,
     "beta": 1.0
   }
 }

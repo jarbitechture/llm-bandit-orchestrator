@@ -1,0 +1,62 @@
+{
+  "strict_tdd:greenfield": {
+    "n": 1,
+    "mean": 0.85,
+    "M2": 0.0
+  },
+  "strict_tdd:refactor": {
+    "n": 2,
+    "mean": 0.8600000000000001,
+    "M2": 0.007200000000000006
+  },
+  "strict_tdd:test": {
+    "n": 0,
+    "mean": 0.5,
+    "M2": 0.0
+  },
+  "strict_tdd:unknown": {
+    "n": 0,
+    "mean": 0.5,
+    "M2": 0.0
+  },
+  "balanced:greenfield": {
+    "n": 1,
+    "mean": 0.78,
+    "M2": 0.0
+  },
+  "balanced:refactor": {
+    "n": 4,
+    "mean": 0.795,
+    "M2": 0.01630000000000003
+  },
+  "balanced:test": {
+    "n": 0,
+    "mean": 0.5,
+    "M2": 0.0
+  },
+  "balanced:unknown": {
+    "n": 0,
+    "mean": 0.5,
+    "M2": 0.0
+  },
+  "exploratory:greenfield": {
+    "n": 1,
+    "mean": 0.7,
+    "M2": 0.0
+  },
+  "exploratory:refactor": {
+    "n": 1,
+    "mean": 0.65,
+    "M2": 0.0
+  },
+  "exploratory:test": {
+    "n": 0,
+    "mean": 0.5,
+    "M2": 0.0
+  },
+  "exploratory:unknown": {
+    "n": 0,
+    "mean": 0.5,
+    "M2": 0.0
+  }
+}

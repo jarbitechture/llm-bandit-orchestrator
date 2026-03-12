@@ -72,3 +72,63 @@
     are valid. Input may be unsorted.
   target_file: src/interval_merge.py
   test_command: pytest tests/test_interval_merge.py -q
+
+# ── Real Manus platform tasks ────────────────────────────
+
+- id: safety_jailbreak_gate
+  prompt: |
+    Add a jailbreak detection gate to the SafetyGates class in
+    governance/safety_gates.py. Implement a new method
+    `gate_jailbreak_detection(self, text: str) -> GateResult` that detects
+    common jailbreak patterns: role-play evasion ("ignore previous instructions",
+    "you are now DAN"), encoding tricks (base64 prompts, unicode homoglyphs),
+    and injection delimiters (```system, <|im_start|>). Return GateStatus.FAIL
+    with a description of the matched pattern if detected, GateStatus.PASS
+    otherwise. Register it in `run_all_gates()`. Must not false-positive on
+    normal civic/government queries like "ignore the previous filing deadline".
+  target_file: governance/safety_gates.py
+  test_command: cd ~/manus-chatbot && python3 -m pytest tests/test_jailbreak_gate.py -v -x
+
+- id: cost_tracker
+  prompt: |
+    Create a new module governance/cost_tracker.py that tracks LLM usage costs.
+    Implement class `CostTracker` with:
+    - `__init__(self, db_path: str)` — creates SQLite table if not exists
+    - `record(self, model: str, agent_type: str, input_tokens: int, output_tokens: int, cost_usd: float)`
+    - `daily_summary(self, date: str | None = None) -> dict` — returns {model: {requests, total_cost, avg_cost}}
+    - `agent_summary(self) -> dict` — returns {agent_type: {requests, total_cost, top_model}}
+    - `budget_alert(self, daily_limit: float) -> bool` — True if today's spend exceeds limit
+    Use context managers for DB connections. All queries must handle empty state gracefully.
+  target_file: governance/cost_tracker.py
+  test_command: cd ~/manus-chatbot && python3 -m pytest tests/test_cost_tracking.py -v -x
+
+- id: tool_registry_discovery
+  prompt: |
+    Extend the ToolRegistry in agents/job_tools/tool_registry.py to support
+    automatic plugin discovery. Add a method
+    `discover_plugins(self, package_path: str) -> int` that:
+    - Scans the given directory for Python files
+    - Imports each module and finds subclasses of BaseTool
+    - Registers them via the existing register() method
+    - Returns the count of newly registered tools
+    - Skips __init__.py and files starting with underscore
+    - Handles ImportError gracefully (logs warning, continues)
+    Must not break existing manual registration. Must be idempotent
+    (calling discover twice doesn't duplicate tools).
+  target_file: agents/job_tools/tool_registry.py
+  test_command: cd ~/manus-chatbot && python3 -m pytest tests/test_job_tools_discovery.py -v -x
+
+- id: router_fallback_chain
+  prompt: |
+    Add a fallback chain to MultiModelRouter in agents/multi_model_router.py.
+    Implement method `route_with_fallback(self, agent_type: AgentType,
+    complexity: TaskComplexity, max_retries: int = 2) -> ModelStrategy` that:
+    - First tries the primary model for the agent_type + complexity
+    - On failure (model unavailable/timeout), falls back to the next tier
+    - Fallback order: primary → fallback → any available local model → cloud
+    - Tracks fallback events in usage stats: fallback_count, fallback_models
+    - Raises RuntimeError only if ALL options exhausted
+    - Never falls back to a more expensive tier unless explicitly allowed
+    Must integrate with existing route() without breaking it.
+  target_file: agents/multi_model_router.py
+  test_command: cd ~/manus-chatbot && python3 -m pytest tests/test_model_manager.py -v -x
