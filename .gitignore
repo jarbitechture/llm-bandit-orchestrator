@@ -3,3 +3,13 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 *.pyc
+
+# Runtime state (generated per-session, not source)
+bandit_state.json
+cross_bandit_state.json
+score_bandit_state.json
+task_bandit_state.json
+tasktype_bandit_state.json
+runs.jsonl
+.active_variant
+.score_lock
