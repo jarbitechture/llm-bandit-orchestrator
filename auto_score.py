@@ -76,17 +76,21 @@ def score_compactness(files: list[str], budget: int | None = None) -> float:
         complexity = detect_complexity(files)
         budget = COMPLEXITY_BUDGETS[complexity]
     total_lines = 0
-    for f in files:
+    if files:
+        quoted = " ".join(f'"{f}"' for f in files)
         try:
             r = subprocess.run(
-                f'git diff --numstat -- "{f}" 2>/dev/null',
-                shell=True, capture_output=True, text=True, timeout=5
+                f"git diff --numstat -- {quoted}",
+                shell=True, capture_output=True, text=True, timeout=10
             )
-            if r.stdout.strip():
-                parts = r.stdout.strip().split("\t")
-                added = int(parts[0]) if parts[0] != "-" else 0
-                total_lines += added
-        except (subprocess.TimeoutExpired, ValueError, IndexError):
+            for line in r.stdout.strip().splitlines():
+                parts = line.split("\t")
+                try:
+                    added = int(parts[0]) if parts[0] != "-" else 0
+                    total_lines += added
+                except (ValueError, IndexError):
+                    pass
+        except subprocess.TimeoutExpired:
             pass
     if total_lines == 0:
         return 1.0
@@ -98,7 +102,8 @@ def score_first_try() -> float:
     if not os.path.exists(ATTEMPT_FILE):
         return 1.0
     try:
-        data = json.loads(open(ATTEMPT_FILE).read())
+        with open(ATTEMPT_FILE) as fh:
+            data = json.load(fh)
         return 0.0 if data.get("failed", False) else 1.0
     except (json.JSONDecodeError, OSError):
         return 1.0
@@ -118,16 +123,31 @@ def clear_attempt():
 def detect_task_type(files: list[str]) -> str:
     if not files:
         return "unknown"
+    # Batch: get all tracked files in one git call
+    quoted = " ".join(f'"{f}"' for f in files)
+    try:
+        r = subprocess.run(
+            f"git log --oneline -1 -- {quoted}",
+            shell=True, capture_output=True, text=True, timeout=10
+        )
+        tracked = set(r.stdout.strip().splitlines()) if r.stdout.strip() else set()
+    except (subprocess.TimeoutExpired, OSError):
+        tracked = set()
+    # If git log returned output, at least some files are tracked (modified)
+    # Use file count heuristic: check each file individually for presence in git
     new_files = 0
     mod_files = 0
     for f in files:
-        r = subprocess.run(
-            f'git log --oneline -1 -- "{f}" 2>/dev/null',
-            shell=True, capture_output=True, text=True, timeout=5
-        )
-        if r.stdout.strip():
-            mod_files += 1
-        else:
+        try:
+            r = subprocess.run(
+                f'git log --oneline -1 -- "{f}"',
+                shell=True, capture_output=True, text=True, timeout=5
+            )
+            if r.stdout.strip():
+                mod_files += 1
+            else:
+                new_files += 1
+        except (subprocess.TimeoutExpired, OSError):
             new_files += 1
     if new_files > mod_files:
         return "greenfield"
@@ -161,24 +181,24 @@ def _get_total_trials() -> int:
 
 
 def compute_score(test_cmd: str, files: list[str], budget: int | None = None) -> dict:
-    t = score_tests(test_cmd)
-    l = score_lint(files)
-    c = score_compactness(files, budget)
-    f = score_first_try()
+    test_score = score_tests(test_cmd)
+    lint_score = score_lint(files)
+    compact_score = score_compactness(files, budget)
+    first_try_score = score_first_try()
 
     n_trials = _get_total_trials()
     w = get_weights(n_trials)
 
-    total = (t * w["test_pass"]) + (l * w["lint_clean"]) + (c * w["compact"]) + (f * w["first_try"])
+    total = (test_score * w["test_pass"]) + (lint_score * w["lint_clean"]) + (compact_score * w["compact"]) + (first_try_score * w["first_try"])
     task_type = detect_task_type(files)
 
     return {
         "score": round(total, 3),
         "breakdown": {
-            "test_pass": {"value": t, "weight": w["test_pass"]},
-            "lint_clean": {"value": l, "weight": w["lint_clean"]},
-            "compact": {"value": c, "weight": w["compact"]},
-            "first_try": {"value": f, "weight": w["first_try"]},
+            "test_pass": {"value": test_score, "weight": w["test_pass"]},
+            "lint_clean": {"value": lint_score, "weight": w["lint_clean"]},
+            "compact": {"value": compact_score, "weight": w["compact"]},
+            "first_try": {"value": first_try_score, "weight": w["first_try"]},
         },
         "task_type": task_type,
         "maturity_phase": "cold_start" if n_trials < 5 else "exploring" if n_trials < 15 else "converged",

@@ -17,6 +17,7 @@ import argparse
 import json
 import os
 import sys
+import time
 
 import numpy as np
 from scipy import stats
@@ -432,7 +433,6 @@ def cmd_update(args: argparse.Namespace) -> None:
         save_tasktype_state(tasktype_state)
 
     # Log to runs.jsonl
-    import time
     run_entry = {
         "timestamp": time.time(),
         "task_id": args.task_id,

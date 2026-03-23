@@ -17,6 +17,7 @@ import tempfile
 from typing import Dict, List
 
 import numpy as np
+from scipy.stats import t as t_dist
 
 _DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(_DIR, "bandit_state.json")
@@ -301,7 +302,6 @@ def get_score_stats(state: Dict[str, Dict]) -> Dict[str, Dict]:
             variance = s["M2"] / (n - 1)
             std = np.sqrt(variance)
             stderr = std / np.sqrt(n)
-            from scipy.stats import t as t_dist
             ci = t_dist.interval(0.90, df=n - 1, loc=s["mean"], scale=stderr)
             result[arm_id] = {
                 "n": n, "mean": round(s["mean"], 3),
