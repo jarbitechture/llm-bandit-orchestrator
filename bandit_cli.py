@@ -444,6 +444,20 @@ def cmd_update(args: argparse.Namespace) -> None:
     with open(RUN_LOG, "a") as f:
         f.write(json.dumps(run_entry) + "\n")
 
+    # Also feed the oracle (Bayesian NIG sampler used by UserPromptSubmit hook).
+    # Keeps oracle_state.json in sync with runs.jsonl so the two hooks agree.
+    if args.variant:
+        oracle_value = score if score is not None else (1.0 if success else 0.0)
+        try:
+            oracle_file = os.path.join(_DIR, "oracle_state.json")
+            with open(oracle_file) as _of:
+                oracle_state = json.load(_of)
+            oracle_state.setdefault("arms", {}).setdefault(args.variant, []).append(float(oracle_value))
+            with open(oracle_file, "w") as _of:
+                json.dump(oracle_state, _of, indent=2)
+        except Exception as _e:
+            print(f"WARNING: oracle observe failed: {_e}", file=sys.stderr)
+
     # Clear attempt tracking
     attempt_file = os.path.join(_DIR, ".current_attempt")
     if os.path.exists(attempt_file):
